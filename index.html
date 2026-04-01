@@ -8555,6 +8555,16 @@ function cloudProjectStatusChip(rec){
   return `<span style="display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;border:1px solid ${bd};background:${bg};color:${cl};">${label}</span>`;
 }
 async function cloudProjectAllowOpen(projectId, {showModal=true, projectName=''}={}){
+  // 先查自己是否为项目成员——成员直接放行，无需验证订阅
+  // （订阅是 owner 开通的，RLS 只让 owner 读 project_subscriptions，协同方查不到）
+  try{
+    const member = await cloudGetMyMember(projectId);
+    if(member && member.role && member.role !== 'owner'){
+      // 非 owner 成员（editor/viewer 等）：只要是成员就放行
+      return true;
+    }
+  }catch(e){}
+  // owner 或未加入成员：走原来的订阅验证流程
   const rec = await cloudGetProjectSubscription(projectId, true);
   if(cloudProjectSubActive(rec)) return true;
   if(showModal){
