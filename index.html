@@ -9032,16 +9032,32 @@ async function cloudLoadProject(projectId){
     if(!okToOpen) return;
     const member = await cloudGetMyMember(projectId);
     if(!member) throw new Error('你还没有加入这个项目');
+    const myUnitId = member?.unit_id || null;
+    // 协作方（有unit_id）：只拉分配给自己单位的节点
+    // 主账号/管理员（unit_id为null）：拉全部节点
+    const nodeQuery = myUnitId
+      ? `/rest/v1/mindmap_nodes?project_id=eq.${projectId}&assigned_unit_id=eq.${myUnitId}&select=id,project_id,parent_id,title,content,sort_order,assigned_unit_id,unit_root_for&order=sort_order.asc`
+      : `/rest/v1/mindmap_nodes?project_id=eq.${projectId}&select=id,project_id,parent_id,title,content,sort_order,assigned_unit_id,unit_root_for&order=sort_order.asc`;
     const [projectName, nodeRows, edgeRows] = await Promise.all([
       cloudGetProjectName(projectId),
-      cloudSelect(`/rest/v1/mindmap_nodes?project_id=eq.${projectId}&select=id,project_id,parent_id,title,content,sort_order,assigned_unit_id,unit_root_for&order=sort_order.asc`),
+      cloudSelect(nodeQuery),
       cloudSelect(`/rest/v1/mindmap_edges?project_id=eq.${projectId}&select=from_node_id,to_node_id`)
     ]);
     if(!nodeRows?.length){
-      if(member?.unit_id) throw new Error('当前账号已加入项目，但还没有可见节点。通常是主账号尚未保存项目，或你的单位还没有绑定入口节点。');
+      if(myUnitId) throw new Error('当前账号已加入项目，但还没有可见节点。通常是主账号尚未保存项目，或你的单位还没有绑定入口节点。');
       throw new Error('项目中还没有节点数据，请先保存项目内容。');
     }
     cloudBuildMapFromRows(nodeRows, edgeRows);
+    // 协作方：以本单位根节点作为画布根节点
+    if(myUnitId){
+      const unitRoot = Object.values(nodes).find(n => n.unitRootFor === myUnitId || n.assignedUnitId === myUnitId && !n.parentId);
+      if(unitRoot){
+        // 把单位根节点的 parentId 清空，使其成为画布根
+        unitRoot.parentId = null;
+        rootId = unitRoot.id;
+        selId = rootId;
+      }
+    }
     document.getElementById('cv').innerHTML='<svg id="lsvg"></svg>';
     render();
     setTimeout(fitView, 80);
